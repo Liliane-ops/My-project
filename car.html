@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Add Car</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js" defer></script>
+    <link rel="stylesheet" href="./styles/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,700;0,900;1,100;1,200;1,300&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;1,100;1,300;1,400;1,500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="main">
+      <form id="save">
+        <input
+          type="text"
+          placeholder="Title"
+          name="title"
+          id="title"
+          value=""
+        />
+        <input
+          type="text"
+          placeholder="description"
+          name="description"
+          value=""
+          id="description"
+        />
+        <input
+          type="text"
+          placeholder="Image URL (or choose file below)"
+          name="image"
+          id="image"
+          value=""
+        />
+        <input
+          type="file"
+          accept="image/*"
+          name="imageFile"
+          id="imageFile"
+        />
+        <button type="submit" value="Save" name="submit">Save</button>
+      </form>
+      <section class="saved-local">
+        <h2>Locally saved cars</h2>
+        <ul id="savedCarsList" class="saved-cars-list"></ul>
+      </section>
+    </main>
+    <script>
+      // Save New Car
+      const title = document.getElementById("title");
+      const description = document.getElementById("description");
+      const image = document.getElementById("image");
+      const imageFile = document.getElementById("imageFile");
+
+      const form = document.querySelector("#save");
+      const savedCarsList = document.getElementById("savedCarsList");
+      function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = (err) => reject(err);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function getSavedCars() {
+        try {
+          return JSON.parse(localStorage.getItem("localCars") || "[]");
+        } catch (err) {
+          console.error("Failed to parse localCars", err);
+          return [];
+        }
+      }
+
+      function renderSavedCars() {
+        const cars = getSavedCars();
+        savedCarsList.innerHTML = "";
+        if (!cars.length) {
+          savedCarsList.innerHTML = "<li>No local cars saved yet.</li>";
+          return;
+        }
+        cars.forEach((car) => {
+          const li = document.createElement("li");
+          li.className = "saved-car-item";
+          li.innerHTML = `
+            <strong>${car.title || "Untitled"}</strong><br />
+            ${car.description || "No description"}
+            ${car.imgUrl ? `<div class="saved-car-image"><img src="${car.imgUrl}" alt="${car.title || "Car"}" /></div>` : ""}
+          `;
+          savedCarsList.appendChild(li);
+        });
+      }
+
+      function addLocalCar(payload) {
+        const existing = getSavedCars();
+        existing.push(payload);
+        localStorage.setItem("localCars", JSON.stringify(existing));
+        renderSavedCars();
+      }
+
+      renderSavedCars();
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        // compute image value (may read file) before attempting network request
+        try {
+          let imgUrlValue = image.value && image.value.trim();
+          if (imageFile && imageFile.files && imageFile.files[0]) {
+            imgUrlValue = await readFileAsDataURL(imageFile.files[0]);
+          }
+
+          const payload = {
+            title: title.value,
+            imgUrl: imgUrlValue || "",
+            description: description.value,
+          };
+
+          console.log("Saving payload:", payload);
+
+          try {
+            const save = await axios.post(
+              "https://car-shop-3164a-default-rtdb.firebaseio.com/cars.json",
+              payload
+            );
+
+            if (save && (save.status === 200 || save.status === 201)) {
+              window.alert("Your car has been created.");
+              form.reset();
+            } else {
+              window.alert("Unexpected response when saving the car: " + (save.status || JSON.stringify(save)));
+            }
+          } catch (error) {
+            console.error(error);
+            const status = (error.response && error.response.status) || error.status;
+            if (status === 423) {
+              // Save locally as fallback
+              try {
+                addLocalCar(payload);
+                window.alert("Remote DB blocked (423). Car saved locally and will appear in the list.");
+                form.reset();
+              } catch (lsErr) {
+                console.error("Failed saving locally", lsErr);
+                window.alert("Failed to save car: DB locked and local save failed.");
+              }
+            } else {
+              window.alert("Failed to save car: " + (error.message || error));
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          window.alert("Failed to prepare car data: " + (err.message || err));
+        }
+      });
+    </script>
+  </body>
+</html>
